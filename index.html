@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-build="landscape-fill-v2">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -8,7 +8,9 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0b0b0b">
   <meta name="color-scheme" content="dark">
+  <meta name="teleprompter-build" content="landscape-fill-v2">
   <title>Teleprompter</title>
+  <!-- teleprompter-build: landscape-fill-v2 -->
   <style>
     :root {
       --bg: #0b0b0b;
@@ -24,6 +26,8 @@
       --safe-l: env(safe-area-inset-left, 0px);
       --safe-r: env(safe-area-inset-right, 0px);
       --script-size: 32px;
+      --script-measure: min(22em, 100%);
+      --read-line: 0.36;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
@@ -34,7 +38,7 @@
       font-family: system-ui, -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
       overflow: hidden;
     }
-    body { min-height: 100dvh; }
+    body { min-height: 100dvh; min-height: 100svh; }
     button, input, textarea { font: inherit; color: inherit; }
     button {
       appearance: none;
@@ -72,18 +76,37 @@
     #gateNote { font-size: 13px; }
     #gate[hidden], #stage[hidden], #sheet[hidden], #review[hidden] { display: none !important; }
 
-    #cam {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%;
-      object-fit: cover; background: #000;
+    #camWrap {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: #000;
+      pointer-events: none;
     }
-    #cam.mirror { transform: scaleX(-1); }
+    #cam {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      display: block;
+      background: #000;
+      /* Size and transform are set in JS so Fill/Fit stay stable across
+         metadata, rotation, and camera flips. */
+    }
 
-    #overlay { position: absolute; inset: 0; display: flex; flex-direction: column; }
+    #overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr) auto;
+    }
     #topbar {
+      grid-column: 1;
+      grid-row: 1;
       display: flex; align-items: center; justify-content: space-between; gap: 10px;
       padding: calc(8px + var(--safe-t)) calc(14px + var(--safe-r)) 8px calc(14px + var(--safe-l));
       pointer-events: none;
+      z-index: 2;
     }
     .badge {
       pointer-events: auto;
@@ -112,18 +135,23 @@
     #heard { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; color: var(--muted); }
 
     #scroller {
-      flex: 1;
+      grid-column: 1;
+      grid-row: 2;
+      min-width: 0;
+      min-height: 0;
       overflow-y: auto;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior: none;
       touch-action: pan-y;
-      mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 72%, transparent 100%);
-      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 72%, transparent 100%);
+      mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 78%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 78%, transparent 100%);
     }
     .pad { height: 38%; }
     #words {
       padding: 0 22px;
+      max-width: var(--script-measure);
+      margin: 0 auto;
       font-size: var(--script-size);
       line-height: 1.35;
       font-weight: 600;
@@ -152,6 +180,7 @@
       height: 0;
       border-top: 1px solid rgba(232, 184, 109, 0.45);
       pointer-events: none;
+      z-index: 2;
     }
     #focus::before, #focus::after {
       content: "";
@@ -165,14 +194,19 @@
     #focus::after { right: 0; transform: rotate(135deg); }
 
     #dock {
+      grid-column: 1;
+      grid-row: 3;
+      z-index: 2;
       padding: 8px calc(12px + var(--safe-r)) calc(10px + var(--safe-b)) calc(12px + var(--safe-l));
       background: linear-gradient(to top, rgba(0,0,0,0.82), rgba(0,0,0,0.45) 70%, transparent);
     }
     .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+    .row:first-child { margin-top: 0; }
     .row.primary button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; padding: 6px 8px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
     .row.primary button svg { width: 20px; height: 20px; }
     .row.sliders { gap: 14px; }
     .row.sliders label { flex: 1; }
+    .row.segs { gap: 8px; }
     .seg { display: flex; flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
     .seg button { flex: 1; border-radius: 0; background: transparent; min-height: 44px; font-size: 13px; }
     .seg button.active { background: var(--accent); color: #1a1206; font-weight: 600; }
@@ -215,31 +249,86 @@
       font-size: 14px;
     }
 
-    @media (orientation: landscape) and (max-height: 520px) {
-      :root { --script-size: 26px; }
-      #words { padding: 0 16px; }
-      .row.primary button { min-height: 44px; flex-direction: row; gap: 6px; font-size: 11px; }
-      .row.sliders { margin-top: 4px; }
-      .pad { height: 32%; }
-      #focus { top: 32%; }
-      #dock { padding-top: 0; }
+    /* Landscape: text still scrolls vertically, but the band is wider and
+       controls move to a side rail so they don't cover the script. */
+    @media (orientation: landscape) {
+      :root { --script-measure: min(46em, 100%); }
+      #overlay {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+      #topbar {
+        grid-column: 1;
+        grid-row: 1;
+        padding-top: calc(6px + var(--safe-t));
+        padding-right: 10px;
+        padding-left: calc(12px + var(--safe-l));
+        padding-bottom: 4px;
+      }
+      #scroller {
+        grid-column: 1;
+        grid-row: 2;
+        padding-left: var(--safe-l);
+      }
+      #words { padding: 0 20px; }
+      #dock {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        width: clamp(96px, 22vw, 156px);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 8px;
+        padding: calc(6px + var(--safe-t)) calc(8px + var(--safe-r)) calc(6px + var(--safe-b)) 8px;
+        background: linear-gradient(to left, rgba(0,0,0,0.86), rgba(0,0,0,0.5) 78%, transparent);
+      }
+      #dock .row { margin-top: 0; }
+      .row.primary {
+        flex-direction: column;
+        gap: 6px;
+      }
+      .row.primary button {
+        width: 100%;
+        flex-direction: row;
+        justify-content: flex-start;
+        gap: 8px;
+        min-height: 40px;
+        padding: 4px 10px;
+        font-size: 11px;
+      }
+      .row.sliders {
+        flex-direction: column;
+        gap: 4px;
+        align-items: stretch;
+      }
+      .row.segs {
+        flex-direction: column;
+        gap: 6px;
+      }
+      .seg { width: 100%; }
+      .seg button { min-height: 36px; font-size: 12px; padding: 0 8px; }
     }
-    @media (min-width: 800px) {
-      #words { max-width: 22em; margin: 0 auto; }
+
+    @media (orientation: landscape) and (max-height: 420px) {
+      .row.primary button { min-height: 34px; font-size: 10px; }
+      .seg button { min-height: 32px; }
+      #dock { width: clamp(88px, 20vw, 132px); }
     }
   </style>
 </head>
 <body>
   <section id="gate">
     <h1>Teleprompter</h1>
-    <p>Your script scrolls over the live camera as you speak. Voice-follow is on by default. You can also switch to a steady auto-scroll.</p>
+    <p>Your script scrolls over the live camera as you speak. Voice-follow is on by default. You can also switch to a steady auto-scroll. In landscape, the text stays vertical and the controls move to the side.</p>
     <p id="gateNote">Safari will ask for the camera and the microphone. This page has to be opened at an https address on an iPhone — a downloaded file will not get camera or speech access.</p>
     <p id="errorBox" hidden></p>
     <button type="button" id="startBtn">Start camera</button>
   </section>
 
   <section id="stage" hidden>
-    <video id="cam" playsinline webkit-playsinline muted autoplay></video>
+    <div id="camWrap">
+      <video id="cam" playsinline webkit-playsinline muted autoplay></video>
+    </div>
     <div id="overlay">
       <div id="topbar">
         <div id="listenBadge" class="badge paused"><span class="dot"></span><span id="listenLabel">Voice follow</span></div>
@@ -273,12 +362,16 @@
         </div>
         <div class="row sliders">
           <label>Speed <input type="range" id="speed" min="60" max="200" value="140" step="5"></label>
-          <label>Size <input type="range" id="fontSize" min="22" max="56" value="32" step="1"></label>
+          <label>Size <input type="range" id="fontSize" min="18" max="56" value="32" step="1"></label>
         </div>
-        <div class="row">
+        <div class="row segs">
           <div class="seg" role="tablist" aria-label="Scroll mode">
             <button type="button" id="modeVoice" class="active">Voice follow</button>
             <button type="button" id="modeAuto">Auto-scroll</button>
+          </div>
+          <div class="seg" role="tablist" aria-label="Camera framing">
+            <button type="button" id="fitFill" class="active">Fill</button>
+            <button type="button" id="fitFit">Fit</button>
           </div>
         </div>
       </div>
@@ -325,13 +418,21 @@
         script: "teleprompter.v1.script",
         speed: "teleprompter.v1.speed",
         font: "teleprompter.v1.font",
-        mode: "teleprompter.v1.mode"
+        fontPort: "teleprompter.v1.fontPortrait",
+        fontLand: "teleprompter.v1.fontLandscape",
+        mode: "teleprompter.v1.mode",
+        fit: "teleprompter.v1.fit"
       };
+
+      var READ_LINE = 0.36;
 
       function $(id) { return document.getElementById(id); }
       function isIOS() {
         return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
           (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      }
+      function isLandscape() {
+        return window.matchMedia("(orientation: landscape)").matches;
       }
       function SpeechCtor() {
         return window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -342,6 +443,9 @@
         stream: null,
         playing: false,
         mode: "voice",
+        fit: "cover",
+        fontPort: 32,
+        fontLand: 28,
         rec: null,
         wantListen: false,
         restartTimer: null,
@@ -363,7 +467,10 @@
         scrollTimer: 0,
         autoLast: 0,
         pointer: null,
-        lastHeard: ""
+        lastHeard: "",
+        camBound: false,
+        trackHook: null,
+        layoutTimer: 0
       };
 
       var follower = new TeleprompterFollow.VoiceFollower(SAMPLE);
@@ -397,17 +504,25 @@
           var script = localStorage.getItem(STORE.script);
           var speed = localStorage.getItem(STORE.speed);
           var font = localStorage.getItem(STORE.font);
+          var fontPort = localStorage.getItem(STORE.fontPort);
+          var fontLand = localStorage.getItem(STORE.fontLand);
           var mode = localStorage.getItem(STORE.mode);
+          var fit = localStorage.getItem(STORE.fit);
           if (script) $("scriptInput").value = script;
           else $("scriptInput").value = SAMPLE;
           if (speed) $("speed").value = speed;
-          if (font) $("fontSize").value = font;
+          if (fontPort) state.fontPort = Number(fontPort) || state.fontPort;
+          else if (font) state.fontPort = Number(font) || state.fontPort;
+          if (fontLand) state.fontLand = Number(fontLand) || state.fontLand;
+          else if (font) state.fontLand = Number(font) || state.fontLand;
           if (mode === "auto" || mode === "voice") state.mode = mode;
+          if (fit === "contain" || fit === "cover") state.fit = fit;
         } catch (e) {
           $("scriptInput").value = SAMPLE;
         }
         if (!SpeechCtor()) state.mode = "auto";
         applyFont();
+        applyFit(state.fit, true);
         applyMode(state.mode, true);
         setScript($("scriptInput").value, true);
       }
@@ -417,7 +532,10 @@
           localStorage.setItem(STORE.script, $("scriptInput").value);
           localStorage.setItem(STORE.speed, $("speed").value);
           localStorage.setItem(STORE.font, $("fontSize").value);
+          localStorage.setItem(STORE.fontPort, String(state.fontPort));
+          localStorage.setItem(STORE.fontLand, String(state.fontLand));
           localStorage.setItem(STORE.mode, state.mode);
+          localStorage.setItem(STORE.fit, state.fit);
         } catch (e) {}
       }
 
@@ -455,9 +573,16 @@
         }
       }
 
+      function currentFont() {
+        return isLandscape() ? state.fontLand : state.fontPort;
+      }
+
       function applyFont() {
-        document.documentElement.style.setProperty("--script-size", $("fontSize").value + "px");
-        if (state.playing) scrollToCursor(false);
+        var size = currentFont();
+        $("fontSize").value = size;
+        document.documentElement.style.setProperty("--script-size", size + "px");
+        layoutFocus();
+        scrollToCursor(false);
       }
 
       function applyMode(mode, silent) {
@@ -470,6 +595,14 @@
           else stopListening(true);
         }
         updateListenBadge();
+      }
+
+      function applyFit(fit, silent) {
+        state.fit = fit === "contain" ? "contain" : "cover";
+        $("fitFill").classList.toggle("active", state.fit === "cover");
+        $("fitFit").classList.toggle("active", state.fit === "contain");
+        layoutCamera();
+        if (!silent) savePrefs();
       }
 
       function updateListenBadge() {
@@ -513,12 +646,117 @@
         el.textContent = text;
       }
 
+      function readingY(scrollerRect) {
+        return scrollerRect.top + scrollerRect.height * READ_LINE;
+      }
+
+      function layoutFocus() {
+        var scroller = $("scroller");
+        var focus = $("focus");
+        var overlay = $("overlay");
+        if (!scroller || !focus || !overlay) return;
+        var o = overlay.getBoundingClientRect();
+        var s = scroller.getBoundingClientRect();
+        if (!s.width || !s.height) return;
+        var y = s.top - o.top + s.height * READ_LINE;
+        focus.style.top = y + "px";
+        focus.style.left = Math.max(0, s.left - o.left + 10) + "px";
+        focus.style.right = Math.max(0, o.right - s.right + 10) + "px";
+      }
+
+      function layoutCamera() {
+        var wrap = $("camWrap");
+        var video = $("cam");
+        if (!wrap || !video) return;
+        var cw = wrap.clientWidth;
+        var ch = wrap.clientHeight;
+        if (!cw || !ch) return;
+        var vw = video.videoWidth || 0;
+        var vh = video.videoHeight || 0;
+        var w, h;
+        if (!vw || !vh) {
+          // Avoid the 300x150 intrinsic shrink before metadata arrives.
+          w = cw;
+          h = ch;
+        } else if (state.fit === "contain") {
+          var sContain = Math.min(cw / vw, ch / vh);
+          w = vw * sContain;
+          h = vh * sContain;
+        } else {
+          var sCover = Math.max(cw / vw, ch / vh);
+          w = vw * sCover;
+          h = vh * sCover;
+        }
+        video.style.width = Math.round(w) + "px";
+        video.style.height = Math.round(h) + "px";
+        video.style.transform = state.facing === "user"
+          ? "translate(-50%, -50%) scaleX(-1)"
+          : "translate(-50%, -50%)";
+      }
+
+      function scheduleLayout() {
+        layoutCamera();
+        layoutFocus();
+        [50, 160, 320, 500, 800].forEach(function (ms) {
+          setTimeout(function () {
+            layoutCamera();
+            layoutFocus();
+            scrollToCursor(false);
+          }, ms);
+        });
+      }
+
+      function onViewportChange() {
+        applyFont();
+        scheduleLayout();
+      }
+
+      function hookVideoTrack(stream) {
+        if (state.trackHook && state.trackHook.track) {
+          try { state.trackHook.track.removeEventListener("resize", layoutCamera); } catch (e) {}
+        }
+        var track = stream && stream.getVideoTracks()[0];
+        state.trackHook = { track: track };
+        if (track && track.addEventListener) {
+          track.addEventListener("resize", function () {
+            layoutCamera();
+            layoutFocus();
+          });
+        }
+      }
+
+      function bindCameraLayout() {
+        if (state.camBound) return;
+        state.camBound = true;
+        var video = $("cam");
+        ["loadedmetadata", "loadeddata", "resize", "play", "emptied"].forEach(function (ev) {
+          video.addEventListener(ev, function () {
+            layoutCamera();
+            layoutFocus();
+          });
+        });
+        window.addEventListener("resize", onViewportChange);
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener("resize", onViewportChange);
+        }
+        window.addEventListener("orientationchange", onViewportChange);
+        if (typeof ResizeObserver !== "undefined") {
+          new ResizeObserver(function () {
+            layoutCamera();
+            layoutFocus();
+          }).observe($("camWrap"));
+          new ResizeObserver(function () {
+            layoutFocus();
+          }).observe($("scroller"));
+        }
+      }
+
       function scrollToCursor(smooth) {
         var el = state.wordEls[follower.cursor];
         var scroller = $("scroller");
         if (!el || !scroller || state.userScrolling) return;
         var scrollerRect = scroller.getBoundingClientRect();
-        var lineY = scrollerRect.top + scrollerRect.height * 0.36;
+        var lineY = readingY(scrollerRect);
         var wordRect = el.getBoundingClientRect();
         var delta = wordRect.top + wordRect.height / 2 - lineY;
         var target = scroller.scrollTop + delta;
@@ -557,7 +795,7 @@
 
       function reanchorFromLine() {
         var scroller = $("scroller");
-        var mid = scroller.getBoundingClientRect().top + scroller.getBoundingClientRect().height * 0.36;
+        var mid = readingY(scroller.getBoundingClientRect());
         var best = follower.cursor;
         var bestDist = Infinity;
         for (var i = 0; i < state.wordEls.length; i++) {
@@ -582,9 +820,7 @@
         var constraints = {
           audio: false,
           video: {
-            facingMode: { ideal: next },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
+            facingMode: { ideal: next }
           }
         };
         var stream;
@@ -605,8 +841,12 @@
         video.muted = true;
         video.playsInline = true;
         video.srcObject = stream;
-        video.classList.toggle("mirror", next === "user");
+        hookVideoTrack(stream);
+        bindCameraLayout();
+        layoutCamera();
         try { await video.play(); } catch (e) {}
+        layoutCamera();
+        layoutFocus();
       }
 
       async function ensureMicForRecording() {
@@ -769,8 +1009,6 @@
           return;
         }
         var wpm = Number($("speed").value) || 140;
-        var words = follower.words.length || 1;
-        // Approximate: 1 word ≈ font-size * 0.7 of scroll, but we advance cursor by time
         var elapsed = (now - state.autoLast) / 1000;
         state.autoLast = now;
         var advance = (wpm / 60) * elapsed;
@@ -804,8 +1042,11 @@
         if (state.recording) return;
         var next = state.facing === "user" ? "environment" : "user";
         $("flipBtn").disabled = true;
-        try { await startCamera(next); }
-        catch (err) { showError("Could not flip the camera."); }
+        try {
+          await startCamera(next);
+          applyFit(state.fit, true);
+          scheduleLayout();
+        } catch (err) { showError("Could not flip the camera."); }
         $("flipBtn").disabled = false;
       }
 
@@ -980,6 +1221,8 @@
             await startCamera("user");
             $("gate").hidden = true;
             $("stage").hidden = false;
+            applyFit(state.fit, true);
+            scheduleLayout();
             scrollToCursor(false);
             if (!SpeechCtor()) {
               applyMode("auto");
@@ -1014,12 +1257,21 @@
           applyMode("voice");
         });
         $("modeAuto").addEventListener("click", function () { applyMode("auto"); });
+        $("fitFill").addEventListener("click", function () { applyFit("cover"); });
+        $("fitFit").addEventListener("click", function () { applyFit("contain"); });
         $("speed").addEventListener("input", savePrefs);
-        $("fontSize").addEventListener("input", function () { applyFont(); savePrefs(); });
+        $("fontSize").addEventListener("input", function () {
+          var v = Number($("fontSize").value) || 32;
+          if (isLandscape()) state.fontLand = v;
+          else state.fontPort = v;
+          applyFont();
+          savePrefs();
+        });
         $("discardTake").addEventListener("click", closeReview);
         $("downloadTake").addEventListener("click", downloadTake);
         $("shareTake").addEventListener("click", shareTake);
         bindPointer();
+        bindCameraLayout();
         document.addEventListener("visibilitychange", function () {
           if (document.hidden) {
             if (state.wantListen) stopRecogOnly();
@@ -1027,11 +1279,9 @@
           }
           if (state.playing && state.mode === "voice" && state.wantListen) startListening();
           if (state.playing) requestWakeLock();
+          scheduleLayout();
         });
         window.addEventListener("pagehide", function () { stopListening(); releaseWakeLock(); });
-        window.addEventListener("orientationchange", function () {
-          setTimeout(function () { scrollToCursor(false); }, 250);
-        });
       }
 
       if (!window.isSecureContext) {

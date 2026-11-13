@@ -1,5 +1,7 @@
 # Live-camera teleprompter
 
+Live at https://brflux.github.io/teleprompter/
+
 A single-page teleprompter. The script scrolls over your live camera and, by default, follows your voice as you speak. You can also switch to a steady auto-scroll. Works as a static site: `index.html` plus `follow.js`.
 
 ## Use it
@@ -11,6 +13,8 @@ A single-page teleprompter. The script scrolls over your live camera and, by def
 5. **Flip** switches front and back cameras. **Rec** records the camera and microphone (MP4 on iOS when the browser supports it, WebM elsewhere). Share or download the take when you stop.
 6. Drag the text to re-anchor if you skip around; voice-follow will pick up from that line.
 7. If voice-follow is unavailable, switch to **Auto-scroll** and set speed with the slider.
+8. **Fill** crops the camera to cover the screen; **Fit** shows the whole frame (letterboxed). The choice is remembered.
+9. In landscape, the script still scrolls vertically, but the text is wider and the controls move to a side rail so they don't cover the words. Font size is remembered separately for portrait and landscape.
 
 ## Voice follow
 
@@ -30,9 +34,6 @@ It uses interim speech results when they exist, matches a sliding window of rece
 - Recording and dictation both want the microphone; follow may hitch during a recorded take.
 - If dictation is blocked or missing, auto-scroll is the fallback.
 
-## Hosting (not published yet)
+## Hosting
 
-This folder is a static site. Good free https options:
-
-- GitHub Pages from a new repo, which would be `https://brflux.github.io/teleprompter/`
-- Cloudflare Pages, Netlify, or Vercel, by dropping in this folder
+Live at https://brflux.github.io/teleprompter/. The source is in this repository, served by GitHub Pages from the `main` branch root. A custom domain can be added later with one DNS record and one Pages setting.
