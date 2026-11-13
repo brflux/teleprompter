@@ -14,7 +14,8 @@ A single-page teleprompter. The script scrolls over your live camera and, by def
 6. Drag the text to re-anchor if you skip around; voice-follow will pick up from that line.
 7. If voice-follow is unavailable, switch to **Auto-scroll** and set speed with the slider.
 8. **Fill** crops the camera to cover the screen; **Fit** shows the whole frame (letterboxed). The choice is remembered.
-9. In landscape, the script still scrolls vertically, but the text is wider and the controls move to a side rail so they don't cover the words. Font size is remembered separately for portrait and landscape.
+9. In landscape, the script still scrolls vertically, but the text is wider and the controls sit in a compact side rail (Setup and Hide). Font size is remembered separately for portrait and landscape.
+10. To avoid Safari’s tab bar shrinking the screen, open Share and choose **Add to Home Screen**. The app opens on its own, without browser chrome.
 
 ## Voice follow
 

@@ -1,16 +1,21 @@
 <!DOCTYPE html>
-<html lang="en" data-build="landscape-fill-v2">
+<html lang="en" data-build="rail-compact-v3">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Teleprompter">
+  <meta name="application-name" content="Teleprompter">
   <meta name="theme-color" content="#0b0b0b">
   <meta name="color-scheme" content="dark">
-  <meta name="teleprompter-build" content="landscape-fill-v2">
+  <meta name="teleprompter-build" content="rail-compact-v3">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <title>Teleprompter</title>
-  <!-- teleprompter-build: landscape-fill-v2 -->
+  <!-- teleprompter-build: rail-compact-v3 -->
   <style>
     :root {
       --bg: #0b0b0b;
@@ -25,20 +30,24 @@
       --safe-b: env(safe-area-inset-bottom, 0px);
       --safe-l: env(safe-area-inset-left, 0px);
       --safe-r: env(safe-area-inset-right, 0px);
+      --vv-t: 0px;
+      --vv-l: 0px;
+      --vv-w: 100vw;
+      --vv-h: 100svh;
       --script-size: 32px;
       --script-measure: min(22em, 100%);
-      --read-line: 0.36;
+      --rail-inner: 108px;
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
       margin: 0; padding: 0;
+      width: 100%;
       height: 100%;
       background: var(--bg);
       color: var(--ink);
       font-family: system-ui, -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
       overflow: hidden;
     }
-    body { min-height: 100dvh; min-height: 100svh; }
     button, input, textarea { font: inherit; color: inherit; }
     button {
       appearance: none;
@@ -59,7 +68,14 @@
     input[type="range"]::-webkit-slider-runnable-track { height: 4px; background: var(--line); border-radius: 4px; }
     input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -9px; border-radius: 50%; background: var(--accent); }
 
-    #gate, #stage { position: fixed; inset: 0; }
+    #gate, #stage {
+      position: fixed;
+      top: var(--vv-t);
+      left: var(--vv-l);
+      width: var(--vv-w);
+      height: var(--vv-h);
+      overflow: hidden;
+    }
     #gate {
       z-index: 5;
       display: flex;
@@ -74,7 +90,7 @@
     #gate p { margin: 0 0 14px; color: var(--muted); max-width: 28rem; line-height: 1.45; }
     #startBtn { align-self: flex-start; min-height: 52px; padding: 0 22px; background: var(--accent); color: #1a1206; font-weight: 600; font-size: 17px; }
     #gateNote { font-size: 13px; }
-    #gate[hidden], #stage[hidden], #sheet[hidden], #review[hidden] { display: none !important; }
+    #gate[hidden], #stage[hidden], #sheet[hidden], #review[hidden], #settings[hidden], #railTab[hidden] { display: none !important; }
 
     #camWrap {
       position: absolute;
@@ -89,8 +105,6 @@
       left: 50%;
       display: block;
       background: #000;
-      /* Size and transform are set in JS so Fill/Fit stay stable across
-         metadata, rotation, and camera flips. */
     }
 
     #overlay {
@@ -99,11 +113,15 @@
       display: grid;
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto minmax(0, 1fr) auto;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
     }
     #topbar {
       grid-column: 1;
       grid-row: 1;
-      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px;
+      min-width: 0;
       padding: calc(8px + var(--safe-t)) calc(14px + var(--safe-r)) 8px calc(14px + var(--safe-l));
       pointer-events: none;
       z-index: 2;
@@ -116,10 +134,12 @@
       backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
       border-radius: 999px;
       min-height: 34px;
+      max-width: 100%;
       padding: 0 12px;
       font-size: 12px;
       letter-spacing: 0.04em;
       text-transform: uppercase;
+      min-width: 0;
     }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
     .badge.listening .dot { background: var(--ok); box-shadow: 0 0 0 0 rgba(125, 206, 160, 0.7); animation: pulse 1.4s ease-out infinite; }
@@ -130,9 +150,19 @@
       0% { box-shadow: 0 0 0 0 rgba(125, 206, 160, 0.65); }
       100% { box-shadow: 0 0 0 10px rgba(125, 206, 160, 0); }
     }
-    #recTimer { color: #fff; background: var(--danger); border-color: transparent; }
+    #recTimer { color: #fff; background: var(--danger); border-color: transparent; margin-left: auto; }
     #recTimer[hidden] { display: none !important; }
-    #heard { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; color: var(--muted); }
+    #heard {
+      flex: 1 1 12rem;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--muted);
+    }
 
     #scroller {
       grid-column: 1;
@@ -197,21 +227,41 @@
       grid-column: 1;
       grid-row: 3;
       z-index: 2;
+      min-width: 0;
       padding: 8px calc(12px + var(--safe-r)) calc(10px + var(--safe-b)) calc(12px + var(--safe-l));
       background: linear-gradient(to top, rgba(0,0,0,0.82), rgba(0,0,0,0.45) 70%, transparent);
     }
     .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
     .row:first-child { margin-top: 0; }
-    .row.primary button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; padding: 6px 8px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-    .row.primary button svg { width: 20px; height: 20px; }
+    .row.primary button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; min-width: 0; padding: 6px 8px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); overflow: hidden; }
+    .row.primary button svg { width: 20px; height: 20px; flex: none; }
+    .row.primary button span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .row.sliders { gap: 14px; }
-    .row.sliders label { flex: 1; }
+    .row.sliders label { flex: 1; min-width: 0; }
     .row.segs { gap: 8px; }
-    .seg { display: flex; flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-    .seg button { flex: 1; border-radius: 0; background: transparent; min-height: 44px; font-size: 13px; }
+    .seg { display: flex; flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+    .seg button { flex: 1; min-width: 0; border-radius: 0; background: transparent; min-height: 44px; font-size: 13px; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .seg button.active { background: var(--accent); color: #1a1206; font-weight: 600; }
 
-    #sheet, #review {
+    #railTools, #railTab { display: none; }
+    #railTab {
+      position: absolute;
+      top: 50%;
+      right: calc(8px + var(--safe-r));
+      transform: translateY(-50%);
+      z-index: 3;
+      width: 40px;
+      min-width: 40px;
+      height: 56px;
+      min-height: 56px;
+      padding: 0;
+      border-radius: 12px 0 0 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    }
+
+    #sheet, #review, #settings {
       position: absolute; inset: 0;
       background: rgba(0,0,0,0.55);
       z-index: 4;
@@ -221,8 +271,19 @@
       background: #141414;
       border-top: 1px solid var(--line);
       padding: 16px calc(16px + var(--safe-r)) calc(16px + var(--safe-b)) calc(16px + var(--safe-l));
-      max-height: min(86dvh, 720px);
+      max-height: min(86%, 720px);
+      overflow: auto;
       display: flex; flex-direction: column; gap: 12px;
+    }
+    #settings .panel {
+      max-height: 100%;
+      gap: 10px;
+      padding-top: 12px;
+    }
+    #settingsBody { min-height: 0; overflow: auto; }
+    #settings .seg button.active {
+      background: var(--accent);
+      color: #1a1206;
     }
     .panel h2 { margin: 0; font-size: 18px; font-weight: 600; }
     #scriptInput, #review video {
@@ -242,6 +303,7 @@
     .panel .row { margin-top: 0; }
     .panel .row button { flex: 1; background: #222; }
     .panel .row button.primary { background: var(--accent); color: #1a1206; font-weight: 600; }
+    #settingsBody { display: flex; flex-direction: column; gap: 12px; }
 
     #errorBox {
       margin-top: 8px;
@@ -249,8 +311,8 @@
       font-size: 14px;
     }
 
-    /* Landscape: text still scrolls vertically, but the band is wider and
-       controls move to a side rail so they don't cover the script. */
+    /* Landscape: compact side rail. Width is inner content PLUS safe-area
+       padding, so the notch/home indicator never shrinks the buttons. */
     @media (orientation: landscape) {
       :root { --script-measure: min(46em, 100%); }
       #overlay {
@@ -265,6 +327,7 @@
         padding-left: calc(12px + var(--safe-l));
         padding-bottom: 4px;
       }
+      #heard { flex-basis: 100%; max-width: 100%; }
       #scroller {
         grid-column: 1;
         grid-row: 2;
@@ -274,45 +337,72 @@
       #dock {
         grid-column: 2;
         grid-row: 1 / span 2;
-        width: clamp(96px, 22vw, 156px);
+        width: calc(var(--rail-inner) + 16px + var(--safe-r));
+        max-height: 100%;
+        overflow: hidden;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
+        justify-content: center;
         gap: 8px;
         padding: calc(6px + var(--safe-t)) calc(8px + var(--safe-r)) calc(6px + var(--safe-b)) 8px;
         background: linear-gradient(to left, rgba(0,0,0,0.86), rgba(0,0,0,0.5) 78%, transparent);
       }
       #dock .row { margin-top: 0; }
       .row.primary {
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 6px;
       }
       .row.primary button {
         width: 100%;
-        flex-direction: row;
-        justify-content: flex-start;
-        gap: 8px;
-        min-height: 40px;
-        padding: 4px 10px;
-        font-size: 11px;
+        min-height: 44px;
+        padding: 4px 2px;
+        font-size: 9px;
+        letter-spacing: 0.04em;
+        gap: 1px;
       }
-      .row.sliders {
-        flex-direction: column;
-        gap: 4px;
-        align-items: stretch;
-      }
-      .row.segs {
-        flex-direction: column;
+      .row.primary button svg { width: 18px; height: 18px; }
+      #dock > #controlsExtra { display: none; }
+      #settings #controlsExtra { display: flex; flex-direction: column; gap: 8px; }
+      #settings .row.sliders, #settings .row.segs { flex-direction: column; align-items: stretch; gap: 8px; }
+      #settings .seg button { min-height: 40px; font-size: 15px; white-space: nowrap; background: transparent; }
+      #settings .seg button.active { background: var(--accent); color: #1a1206; }
+      #railTools {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 6px;
       }
-      .seg { width: 100%; }
-      .seg button { min-height: 36px; font-size: 12px; padding: 0 8px; }
+      #railTools button {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1px;
+        width: 100%;
+        min-height: 44px;
+        min-width: 0;
+        padding: 4px 2px;
+        font-size: 9px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        overflow: hidden;
+      }
+      #railTools button svg { width: 18px; height: 18px; }
+      #stage.rail-collapsed #dock { display: none; }
+      #stage.rail-collapsed #overlay {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      #stage.rail-collapsed #topbar { padding-right: calc(48px + var(--safe-r)); }
+      #stage.rail-collapsed #railTab { display: flex; align-items: center; justify-content: center; }
     }
 
-    @media (orientation: landscape) and (max-height: 420px) {
-      .row.primary button { min-height: 34px; font-size: 10px; }
-      .seg button { min-height: 32px; }
-      #dock { width: clamp(88px, 20vw, 132px); }
+    @media (orientation: landscape) and (max-height: 360px) {
+      :root { --rail-inner: 100px; }
+      .row.primary button, #railTools button { min-height: 40px; }
+      #topbar { padding-top: calc(4px + var(--safe-t)); padding-bottom: 2px; }
+      .badge { min-height: 28px; font-size: 11px; }
     }
   </style>
 </head>
@@ -320,7 +410,7 @@
   <section id="gate">
     <h1>Teleprompter</h1>
     <p>Your script scrolls over the live camera as you speak. Voice-follow is on by default. You can also switch to a steady auto-scroll. In landscape, the text stays vertical and the controls move to the side.</p>
-    <p id="gateNote">Safari will ask for the camera and the microphone. This page has to be opened at an https address on an iPhone — a downloaded file will not get camera or speech access.</p>
+    <p id="gateNote">Safari will ask for the camera and the microphone. To keep Safari’s tab bar from shrinking the screen, add this page to your Home Screen: Share, then Add to Home Screen. It opens like an app, without the browser chrome.</p>
     <p id="errorBox" hidden></p>
     <button type="button" id="startBtn">Start camera</button>
   </section>
@@ -332,8 +422,8 @@
     <div id="overlay">
       <div id="topbar">
         <div id="listenBadge" class="badge paused"><span class="dot"></span><span id="listenLabel">Voice follow</span></div>
-        <div id="heard" class="badge" hidden></div>
         <div id="recTimer" class="badge" hidden>00:00</div>
+        <div id="heard" class="badge" hidden></div>
       </div>
       <div id="scroller">
         <div class="pad"></div>
@@ -360,19 +450,44 @@
             Script
           </button>
         </div>
-        <div class="row sliders">
-          <label>Speed <input type="range" id="speed" min="60" max="200" value="140" step="5"></label>
-          <label>Size <input type="range" id="fontSize" min="18" max="56" value="32" step="1"></label>
+        <div id="controlsExtra">
+          <div class="row sliders">
+            <label>Speed <input type="range" id="speed" min="60" max="200" value="140" step="5"></label>
+            <label>Size <input type="range" id="fontSize" min="18" max="56" value="32" step="1"></label>
+          </div>
+          <div class="row segs">
+            <div class="seg" role="tablist" aria-label="Scroll mode">
+              <button type="button" id="modeVoice" class="active">Voice</button>
+              <button type="button" id="modeAuto">Auto</button>
+            </div>
+            <div class="seg" role="tablist" aria-label="Camera framing">
+              <button type="button" id="fitFill" class="active">Fill</button>
+              <button type="button" id="fitFit">Fit</button>
+            </div>
+          </div>
         </div>
-        <div class="row segs">
-          <div class="seg" role="tablist" aria-label="Scroll mode">
-            <button type="button" id="modeVoice" class="active">Voice follow</button>
-            <button type="button" id="modeAuto">Auto-scroll</button>
-          </div>
-          <div class="seg" role="tablist" aria-label="Camera framing">
-            <button type="button" id="fitFill" class="active">Fill</button>
-            <button type="button" id="fitFit">Fit</button>
-          </div>
+        <div id="railTools">
+          <button type="button" id="settingsBtn" aria-label="Settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.5 1.5M16.9 16.9l1.5 1.5M18.4 5.6l-1.5 1.5M7.1 16.9l-1.5 1.5"/></svg>
+            Setup
+          </button>
+          <button type="button" id="railHideBtn" aria-label="Hide controls">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+            Hide
+          </button>
+        </div>
+      </div>
+    </div>
+    <button type="button" id="railTab" hidden aria-label="Show controls">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+
+    <div id="settings" hidden>
+      <div class="panel">
+        <h2>Setup</h2>
+        <div id="settingsBody"></div>
+        <div class="row">
+          <button type="button" id="closeSettings" class="primary">Done</button>
         </div>
       </div>
     </div>
@@ -421,7 +536,8 @@
         fontPort: "teleprompter.v1.fontPortrait",
         fontLand: "teleprompter.v1.fontLandscape",
         mode: "teleprompter.v1.mode",
-        fit: "teleprompter.v1.fit"
+        fit: "teleprompter.v1.fit",
+        rail: "teleprompter.v1.railCollapsed"
       };
 
       var READ_LINE = 0.36;
@@ -433,6 +549,11 @@
       }
       function isLandscape() {
         return window.matchMedia("(orientation: landscape)").matches;
+      }
+      function isStandalone() {
+        return window.navigator.standalone === true ||
+          (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+          (window.matchMedia && window.matchMedia("(display-mode: fullscreen)").matches);
       }
       function SpeechCtor() {
         return window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -446,6 +567,7 @@
         fit: "cover",
         fontPort: 32,
         fontLand: 28,
+        railCollapsed: false,
         rec: null,
         wantListen: false,
         restartTimer: null,
@@ -499,6 +621,21 @@
         return "";
       }
 
+      function syncVisualViewport() {
+        var root = document.documentElement;
+        var vv = window.visualViewport;
+        var w = Math.round(vv ? vv.width : window.innerWidth);
+        var h = Math.round(vv ? vv.height : window.innerHeight);
+        var t = Math.round(vv ? vv.offsetTop : 0);
+        var l = Math.round(vv ? vv.offsetLeft : 0);
+        if (w < 1) w = window.innerWidth;
+        if (h < 1) h = window.innerHeight;
+        root.style.setProperty("--vv-w", w + "px");
+        root.style.setProperty("--vv-h", h + "px");
+        root.style.setProperty("--vv-t", t + "px");
+        root.style.setProperty("--vv-l", l + "px");
+      }
+
       function loadPrefs() {
         try {
           var script = localStorage.getItem(STORE.script);
@@ -508,6 +645,7 @@
           var fontLand = localStorage.getItem(STORE.fontLand);
           var mode = localStorage.getItem(STORE.mode);
           var fit = localStorage.getItem(STORE.fit);
+          var rail = localStorage.getItem(STORE.rail);
           if (script) $("scriptInput").value = script;
           else $("scriptInput").value = SAMPLE;
           if (speed) $("speed").value = speed;
@@ -517,6 +655,7 @@
           else if (font) state.fontLand = Number(font) || state.fontLand;
           if (mode === "auto" || mode === "voice") state.mode = mode;
           if (fit === "contain" || fit === "cover") state.fit = fit;
+          state.railCollapsed = rail === "1";
         } catch (e) {
           $("scriptInput").value = SAMPLE;
         }
@@ -524,7 +663,9 @@
         applyFont();
         applyFit(state.fit, true);
         applyMode(state.mode, true);
+        applyRail(state.railCollapsed, true);
         setScript($("scriptInput").value, true);
+        placeExtras();
       }
 
       function savePrefs() {
@@ -536,7 +677,29 @@
           localStorage.setItem(STORE.fontLand, String(state.fontLand));
           localStorage.setItem(STORE.mode, state.mode);
           localStorage.setItem(STORE.fit, state.fit);
+          localStorage.setItem(STORE.rail, state.railCollapsed ? "1" : "0");
         } catch (e) {}
+      }
+
+      function placeExtras() {
+        var extra = $("controlsExtra");
+        if (!extra) return;
+        if (isLandscape()) $("settingsBody").appendChild(extra);
+        else {
+          $("dock").insertBefore(extra, $("railTools"));
+          $("settings").hidden = true;
+        }
+        extra.style.display = "";
+      }
+
+      function applyRail(collapsed, silent) {
+        state.railCollapsed = !!collapsed;
+        $("stage").classList.toggle("rail-collapsed", state.railCollapsed && isLandscape());
+        $("railTab").hidden = !(state.railCollapsed && isLandscape());
+        if (!silent) savePrefs();
+        layoutFocus();
+        layoutCamera();
+        scrollToCursor(false);
       }
 
       function setScript(text, keepCursor) {
@@ -611,7 +774,7 @@
         badge.classList.remove("listening", "paused", "reconnecting", "error", "unavailable");
         if (!SpeechCtor()) {
           badge.classList.add("unavailable");
-          label.textContent = "Voice follow unavailable";
+          label.textContent = isStandalone() ? "Voice follow unavailable" : "Voice follow unavailable";
           return;
         }
         if (state.mode === "auto") {
@@ -675,7 +838,6 @@
         var vh = video.videoHeight || 0;
         var w, h;
         if (!vw || !vh) {
-          // Avoid the 300x150 intrinsic shrink before metadata arrives.
           w = cw;
           h = ch;
         } else if (state.fit === "contain") {
@@ -695,10 +857,16 @@
       }
 
       function scheduleLayout() {
+        syncVisualViewport();
+        placeExtras();
+        applyRail(state.railCollapsed, true);
         layoutCamera();
         layoutFocus();
         [50, 160, 320, 500, 800].forEach(function (ms) {
           setTimeout(function () {
+            syncVisualViewport();
+            placeExtras();
+            applyRail(state.railCollapsed, true);
             layoutCamera();
             layoutFocus();
             scrollToCursor(false);
@@ -707,7 +875,12 @@
       }
 
       function onViewportChange() {
+        syncVisualViewport();
+        placeExtras();
+        applyRail(state.railCollapsed, true);
         applyFont();
+        layoutCamera();
+        layoutFocus();
         scheduleLayout();
       }
 
@@ -738,6 +911,7 @@
         window.addEventListener("resize", onViewportChange);
         if (window.visualViewport) {
           window.visualViewport.addEventListener("resize", onViewportChange);
+          window.visualViewport.addEventListener("scroll", syncVisualViewport);
         }
         window.addEventListener("orientationchange", onViewportChange);
         if (typeof ResizeObserver !== "undefined") {
@@ -1184,7 +1358,7 @@
           state.pointer = null;
           if (!moved) {
             state.userScrolling = false;
-            if (e && e.target && e.target.closest("button, input, textarea, label, .seg, #sheet, #review")) return;
+            if (e && e.target && e.target.closest("button, input, textarea, label, .seg, #sheet, #review, #settings")) return;
             togglePlay();
             return;
           }
@@ -1203,6 +1377,16 @@
           clearTimeout(state.scrollTimer);
           state.scrollTimer = setTimeout(reanchorFromLine, 140);
         }, { passive: true });
+      }
+
+      function openSettings() {
+        placeExtras();
+        $("settings").hidden = false;
+      }
+
+      function closeSettings() {
+        $("settings").hidden = true;
+        if (!isLandscape()) placeExtras();
       }
 
       function bind() {
@@ -1259,6 +1443,10 @@
         $("modeAuto").addEventListener("click", function () { applyMode("auto"); });
         $("fitFill").addEventListener("click", function () { applyFit("cover"); });
         $("fitFit").addEventListener("click", function () { applyFit("contain"); });
+        $("settingsBtn").addEventListener("click", openSettings);
+        $("closeSettings").addEventListener("click", closeSettings);
+        $("railHideBtn").addEventListener("click", function () { applyRail(true); });
+        $("railTab").addEventListener("click", function () { applyRail(false); });
         $("speed").addEventListener("input", savePrefs);
         $("fontSize").addEventListener("input", function () {
           var v = Number($("fontSize").value) || 32;
@@ -1284,11 +1472,26 @@
         window.addEventListener("pagehide", function () { stopListening(); releaseWakeLock(); });
       }
 
+      function startPreview() {
+        $("gate").hidden = true;
+        $("stage").hidden = false;
+        $("listenBadge").className = "badge listening";
+        $("listenLabel").textContent = "Listening";
+        setHeard("Only five minutes from the house");
+        $("playLabel").textContent = "Pause";
+        $("playBtn").classList.add("active");
+        $("playIcon").innerHTML = '<rect x="7" y="5" width="3.5" height="14"/><rect x="13.5" y="5" width="3.5" height="14"/>';
+        scheduleLayout();
+        scrollToCursor(false);
+      }
+
+      syncVisualViewport();
       if (!window.isSecureContext) {
         $("gateNote").textContent = "This page is not on a secure https address, so iPhone Safari will not allow the camera or voice-follow. Host it at an https URL and open that link.";
       }
       loadPrefs();
       bind();
+      if (/[?&]preview=1(?:&|$)/.test(location.search)) startPreview();
     })();
   </script>
 </body>
