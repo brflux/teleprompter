@@ -1,0 +1,8 @@
+{
+  "name": "teleprompter",
+  "private": true,
+  "description": "Live-camera teleprompter with voice-follow scrolling",
+  "scripts": {
+    "test": "node follow.test.js"
+  }
+}

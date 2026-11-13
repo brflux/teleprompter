@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0b0b0b">
+  <meta name="color-scheme" content="dark">
+  <title>Teleprompter</title>
+  <style>
+    :root {
+      --bg: #0b0b0b;
+      --ink: #f4efe6;
+      --muted: #b7b0a4;
+      --accent: #e8b86d;
+      --danger: #e35d4f;
+      --ok: #7dcea0;
+      --panel: rgba(12, 12, 12, 0.78);
+      --line: rgba(244, 239, 230, 0.14);
+      --safe-t: env(safe-area-inset-top, 0px);
+      --safe-b: env(safe-area-inset-bottom, 0px);
+      --safe-l: env(safe-area-inset-left, 0px);
+      --safe-r: env(safe-area-inset-right, 0px);
+      --script-size: 32px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+    body { min-height: 100dvh; }
+    button, input, textarea { font: inherit; color: inherit; }
+    button {
+      appearance: none;
+      border: 0;
+      background: #1c1c1c;
+      color: var(--ink);
+      border-radius: 999px;
+      min-height: 44px;
+      min-width: 44px;
+      padding: 0 14px;
+      touch-action: manipulation;
+    }
+    button:disabled { opacity: 0.45; }
+    button.active { background: var(--accent); color: #1a1206; }
+    button.danger.active, #recBtn.is-rec { background: var(--danger); color: #fff; }
+    label { display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+    input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 32px; background: transparent; touch-action: manipulation; }
+    input[type="range"]::-webkit-slider-runnable-track { height: 4px; background: var(--line); border-radius: 4px; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -9px; border-radius: 50%; background: var(--accent); }
+
+    #gate, #stage { position: fixed; inset: 0; }
+    #gate {
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: calc(24px + var(--safe-t)) calc(22px + var(--safe-r)) calc(28px + var(--safe-b)) calc(22px + var(--safe-l));
+      background:
+        radial-gradient(120% 80% at 80% -10%, rgba(232, 184, 109, 0.18), transparent 50%),
+        linear-gradient(180deg, #161616, #0b0b0b 55%);
+    }
+    #gate h1 { font-size: clamp(36px, 10vw, 64px); font-weight: 560; letter-spacing: -0.04em; margin: 0 0 12px; }
+    #gate p { margin: 0 0 14px; color: var(--muted); max-width: 28rem; line-height: 1.45; }
+    #startBtn { align-self: flex-start; min-height: 52px; padding: 0 22px; background: var(--accent); color: #1a1206; font-weight: 600; font-size: 17px; }
+    #gateNote { font-size: 13px; }
+    #gate[hidden], #stage[hidden], #sheet[hidden], #review[hidden] { display: none !important; }
+
+    #cam {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover; background: #000;
+    }
+    #cam.mirror { transform: scaleX(-1); }
+
+    #overlay { position: absolute; inset: 0; display: flex; flex-direction: column; }
+    #topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: calc(8px + var(--safe-t)) calc(14px + var(--safe-r)) 8px calc(14px + var(--safe-l));
+      pointer-events: none;
+    }
+    .badge {
+      pointer-events: auto;
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-radius: 999px;
+      min-height: 34px;
+      padding: 0 12px;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+    .badge.listening .dot { background: var(--ok); box-shadow: 0 0 0 0 rgba(125, 206, 160, 0.7); animation: pulse 1.4s ease-out infinite; }
+    .badge.reconnecting .dot { background: var(--accent); }
+    .badge.error .dot, .badge.unavailable .dot { background: var(--danger); }
+    .badge.paused .dot { background: #888; }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(125, 206, 160, 0.65); }
+      100% { box-shadow: 0 0 0 10px rgba(125, 206, 160, 0); }
+    }
+    #recTimer { color: #fff; background: var(--danger); border-color: transparent; }
+    #recTimer[hidden] { display: none !important; }
+    #heard { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: 0; color: var(--muted); }
+
+    #scroller {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: none;
+      touch-action: pan-y;
+      mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 72%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 72%, transparent 100%);
+    }
+    .pad { height: 38%; }
+    #words {
+      padding: 0 22px;
+      font-size: var(--script-size);
+      line-height: 1.35;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      text-align: left;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.9), 0 0 18px rgba(0,0,0,0.55);
+    }
+    #words span {
+      display: inline;
+      color: rgba(244, 239, 230, 0.42);
+      transition: color 0.15s linear;
+    }
+    #words span.is-past { color: rgba(244, 239, 230, 0.28); }
+    #words span.is-current {
+      color: #fff;
+      background: rgba(232, 184, 109, 0.28);
+      border-radius: 0.15em;
+      box-shadow: 0 0 0 0.12em rgba(232, 184, 109, 0.28);
+    }
+
+    #focus {
+      position: absolute;
+      left: calc(12px + var(--safe-l));
+      right: calc(12px + var(--safe-r));
+      top: 36%;
+      height: 0;
+      border-top: 1px solid rgba(232, 184, 109, 0.45);
+      pointer-events: none;
+    }
+    #focus::before, #focus::after {
+      content: "";
+      position: absolute;
+      top: -5px;
+      width: 9px; height: 9px;
+      border-top: 2px solid var(--accent);
+      border-right: 2px solid var(--accent);
+    }
+    #focus::before { left: 0; transform: rotate(-45deg); }
+    #focus::after { right: 0; transform: rotate(135deg); }
+
+    #dock {
+      padding: 8px calc(12px + var(--safe-r)) calc(10px + var(--safe-b)) calc(12px + var(--safe-l));
+      background: linear-gradient(to top, rgba(0,0,0,0.82), rgba(0,0,0,0.45) 70%, transparent);
+    }
+    .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+    .row.primary button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; padding: 6px 8px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+    .row.primary button svg { width: 20px; height: 20px; }
+    .row.sliders { gap: 14px; }
+    .row.sliders label { flex: 1; }
+    .seg { display: flex; flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+    .seg button { flex: 1; border-radius: 0; background: transparent; min-height: 44px; font-size: 13px; }
+    .seg button.active { background: var(--accent); color: #1a1206; font-weight: 600; }
+
+    #sheet, #review {
+      position: absolute; inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 4;
+      display: flex; flex-direction: column; justify-content: flex-end;
+    }
+    .panel {
+      background: #141414;
+      border-top: 1px solid var(--line);
+      padding: 16px calc(16px + var(--safe-r)) calc(16px + var(--safe-b)) calc(16px + var(--safe-l));
+      max-height: min(86dvh, 720px);
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .panel h2 { margin: 0; font-size: 18px; font-weight: 600; }
+    #scriptInput, #review video {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #0c0c0c;
+    }
+    #scriptInput {
+      min-height: 36vh;
+      resize: none;
+      padding: 14px;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+    #review video { max-height: 40vh; background: #000; }
+    .panel .row { margin-top: 0; }
+    .panel .row button { flex: 1; background: #222; }
+    .panel .row button.primary { background: var(--accent); color: #1a1206; font-weight: 600; }
+
+    #errorBox {
+      margin-top: 8px;
+      color: #ffc9c2;
+      font-size: 14px;
+    }
+
+    @media (orientation: landscape) and (max-height: 520px) {
+      :root { --script-size: 26px; }
+      #words { padding: 0 16px; }
+      .row.primary button { min-height: 44px; flex-direction: row; gap: 6px; font-size: 11px; }
+      .row.sliders { margin-top: 4px; }
+      .pad { height: 32%; }
+      #focus { top: 32%; }
+      #dock { padding-top: 0; }
+    }
+    @media (min-width: 800px) {
+      #words { max-width: 22em; margin: 0 auto; }
+    }
+  </style>
+</head>
+<body>
+  <section id="gate">
+    <h1>Teleprompter</h1>
+    <p>Your script scrolls over the live camera as you speak. Voice-follow is on by default. You can also switch to a steady auto-scroll.</p>
+    <p id="gateNote">Safari will ask for the camera and the microphone. This page has to be opened at an https address on an iPhone — a downloaded file will not get camera or speech access.</p>
+    <p id="errorBox" hidden></p>
+    <button type="button" id="startBtn">Start camera</button>
+  </section>
+
+  <section id="stage" hidden>
+    <video id="cam" playsinline webkit-playsinline muted autoplay></video>
+    <div id="overlay">
+      <div id="topbar">
+        <div id="listenBadge" class="badge paused"><span class="dot"></span><span id="listenLabel">Voice follow</span></div>
+        <div id="heard" class="badge" hidden></div>
+        <div id="recTimer" class="badge" hidden>00:00</div>
+      </div>
+      <div id="scroller">
+        <div class="pad"></div>
+        <div id="words"></div>
+        <div class="pad"></div>
+      </div>
+      <div id="focus"></div>
+      <div id="dock">
+        <div class="row primary">
+          <button type="button" id="playBtn" aria-label="Play or pause">
+            <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+            <span id="playLabel">Play</span>
+          </button>
+          <button type="button" id="flipBtn" aria-label="Flip camera">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 9V5h4M20 15v4h-4"/><path d="M5 5c2.4-2 8-3 11 3M19 19c-2.4 2-8 3-11-3"/></svg>
+            Flip
+          </button>
+          <button type="button" id="recBtn" aria-label="Record">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg>
+            Rec
+          </button>
+          <button type="button" id="scriptBtn" aria-label="Edit script">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 5h12v14H6z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>
+            Script
+          </button>
+        </div>
+        <div class="row sliders">
+          <label>Speed <input type="range" id="speed" min="60" max="200" value="140" step="5"></label>
+          <label>Size <input type="range" id="fontSize" min="22" max="56" value="32" step="1"></label>
+        </div>
+        <div class="row">
+          <div class="seg" role="tablist" aria-label="Scroll mode">
+            <button type="button" id="modeVoice" class="active">Voice follow</button>
+            <button type="button" id="modeAuto">Auto-scroll</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="sheet" hidden>
+      <div class="panel">
+        <h2>Script</h2>
+        <textarea id="scriptInput" maxlength="20000" autocomplete="off" autocorrect="on" autocapitalize="sentences" placeholder="Paste your script here"></textarea>
+        <div class="row">
+          <button type="button" id="cancelScript">Cancel</button>
+          <button type="button" id="resetScript">Sample</button>
+          <button type="button" id="useScript" class="primary">Use this script</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="review" hidden>
+      <div class="panel">
+        <h2>Take</h2>
+        <video id="reviewVideo" controls playsinline></video>
+        <div class="row">
+          <button type="button" id="discardTake">Discard</button>
+          <button type="button" id="downloadTake">Download</button>
+          <button type="button" id="shareTake" class="primary">Share</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="follow.js"></script>
+  <script>
+    (function () {
+      var SAMPLE = [
+        "Welcome. This is a sample script you can replace with your own.",
+        "Take a breath, look at the lens, and speak a little slower than feels natural.",
+        "The text can scroll at a steady speed, or it can follow your voice as you read.",
+        "When you are ready, open the script panel, paste your copy, and press play.",
+        "If you pause, the scroll waits. If you change speed or size, it updates live.",
+        "That is all you need to know. Now swap this out and record your take."
+      ].join(" ");
+
+      var STORE = {
+        script: "teleprompter.v1.script",
+        speed: "teleprompter.v1.speed",
+        font: "teleprompter.v1.font",
+        mode: "teleprompter.v1.mode"
+      };
+
+      function $(id) { return document.getElementById(id); }
+      function isIOS() {
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+          (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      }
+      function SpeechCtor() {
+        return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+      }
+
+      var state = {
+        facing: "user",
+        stream: null,
+        playing: false,
+        mode: "voice",
+        rec: null,
+        wantListen: false,
+        restartTimer: null,
+        reconnectShown: false,
+        errorStreak: 0,
+        listenStartedAt: 0,
+        recording: false,
+        recorder: null,
+        chunks: [],
+        recStart: 0,
+        recTimerInt: null,
+        recBlob: null,
+        recUrl: null,
+        mime: "",
+        wake: null,
+        wordEls: [],
+        scrollAnim: 0,
+        userScrolling: false,
+        scrollTimer: 0,
+        autoLast: 0,
+        pointer: null,
+        lastHeard: ""
+      };
+
+      var follower = new TeleprompterFollow.VoiceFollower(SAMPLE);
+
+      function pickRecorderMimeType() {
+        if (typeof MediaRecorder === "undefined") return "";
+        var ios = isIOS();
+        var mp4 = [
+          "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+          "video/mp4;codecs=avc1.424028,mp4a.40.2",
+          "video/mp4;codecs=avc1.4D002A,mp4a.40.2",
+          "video/mp4"
+        ];
+        var webm = [
+          "video/webm;codecs=vp9,opus",
+          "video/webm;codecs=vp8,opus",
+          "video/webm;codecs=vp9",
+          "video/webm;codecs=vp8",
+          "video/webm"
+        ];
+        var list = ios ? mp4.concat(webm) : webm.concat(mp4);
+        if (typeof MediaRecorder.isTypeSupported !== "function") return ios ? "video/mp4" : "";
+        for (var i = 0; i < list.length; i++) {
+          if (MediaRecorder.isTypeSupported(list[i])) return list[i];
+        }
+        return "";
+      }
+
+      function loadPrefs() {
+        try {
+          var script = localStorage.getItem(STORE.script);
+          var speed = localStorage.getItem(STORE.speed);
+          var font = localStorage.getItem(STORE.font);
+          var mode = localStorage.getItem(STORE.mode);
+          if (script) $("scriptInput").value = script;
+          else $("scriptInput").value = SAMPLE;
+          if (speed) $("speed").value = speed;
+          if (font) $("fontSize").value = font;
+          if (mode === "auto" || mode === "voice") state.mode = mode;
+        } catch (e) {
+          $("scriptInput").value = SAMPLE;
+        }
+        if (!SpeechCtor()) state.mode = "auto";
+        applyFont();
+        applyMode(state.mode, true);
+        setScript($("scriptInput").value, true);
+      }
+
+      function savePrefs() {
+        try {
+          localStorage.setItem(STORE.script, $("scriptInput").value);
+          localStorage.setItem(STORE.speed, $("speed").value);
+          localStorage.setItem(STORE.font, $("fontSize").value);
+          localStorage.setItem(STORE.mode, state.mode);
+        } catch (e) {}
+      }
+
+      function setScript(text, keepCursor) {
+        var value = (text || "").trim() || SAMPLE;
+        follower.setScript(value);
+        if (keepCursor) follower.setCursor(0);
+        renderWords();
+        scrollToCursor(false);
+      }
+
+      function renderWords() {
+        var root = $("words");
+        root.textContent = "";
+        state.wordEls = [];
+        var frag = document.createDocumentFragment();
+        for (var i = 0; i < follower.words.length; i++) {
+          var span = document.createElement("span");
+          span.dataset.i = String(i);
+          span.textContent = follower.words[i].raw;
+          frag.appendChild(span);
+          frag.appendChild(document.createTextNode(" "));
+          state.wordEls[i] = span;
+        }
+        root.appendChild(frag);
+        paintCursor();
+      }
+
+      function paintCursor() {
+        var cur = follower.cursor;
+        for (var i = 0; i < state.wordEls.length; i++) {
+          var el = state.wordEls[i];
+          el.classList.toggle("is-current", i === cur);
+          el.classList.toggle("is-past", i < cur);
+        }
+      }
+
+      function applyFont() {
+        document.documentElement.style.setProperty("--script-size", $("fontSize").value + "px");
+        if (state.playing) scrollToCursor(false);
+      }
+
+      function applyMode(mode, silent) {
+        state.mode = mode === "auto" ? "auto" : "voice";
+        $("modeVoice").classList.toggle("active", state.mode === "voice");
+        $("modeAuto").classList.toggle("active", state.mode === "auto");
+        if (!silent) savePrefs();
+        if (state.playing) {
+          if (state.mode === "voice") startListening();
+          else stopListening(true);
+        }
+        updateListenBadge();
+      }
+
+      function updateListenBadge() {
+        var badge = $("listenBadge");
+        var label = $("listenLabel");
+        badge.classList.remove("listening", "paused", "reconnecting", "error", "unavailable");
+        if (!SpeechCtor()) {
+          badge.classList.add("unavailable");
+          label.textContent = "Voice follow unavailable";
+          return;
+        }
+        if (state.mode === "auto") {
+          badge.classList.add("paused");
+          label.textContent = "Auto-scroll";
+          return;
+        }
+        if (state.wantListen && state.playing) {
+          if (state.reconnectShown) {
+            badge.classList.add("reconnecting");
+            label.textContent = "Reconnecting";
+          } else {
+            badge.classList.add("listening");
+            label.textContent = "Listening";
+          }
+          return;
+        }
+        if (state.errorStreak >= 6) {
+          badge.classList.add("error");
+          label.textContent = "Tap play to listen again";
+          return;
+        }
+        badge.classList.add("paused");
+        label.textContent = "Voice follow paused";
+      }
+
+      function setHeard(text) {
+        var el = $("heard");
+        state.lastHeard = text || "";
+        if (!text) { el.hidden = true; return; }
+        el.hidden = false;
+        el.textContent = text;
+      }
+
+      function scrollToCursor(smooth) {
+        var el = state.wordEls[follower.cursor];
+        var scroller = $("scroller");
+        if (!el || !scroller || state.userScrolling) return;
+        var scrollerRect = scroller.getBoundingClientRect();
+        var lineY = scrollerRect.top + scrollerRect.height * 0.36;
+        var wordRect = el.getBoundingClientRect();
+        var delta = wordRect.top + wordRect.height / 2 - lineY;
+        var target = scroller.scrollTop + delta;
+        if (Math.abs(delta) < 0.8) return;
+        if (!smooth) {
+          cancelScroll();
+          scroller.scrollTop = target;
+          return;
+        }
+        startScroll(scroller, target);
+      }
+
+      function cancelScroll() {
+        if (state.scrollAnim) cancelAnimationFrame(state.scrollAnim);
+        state.scrollAnim = 0;
+      }
+
+      function startScroll(scroller, target) {
+        cancelScroll();
+        var from = scroller.scrollTop;
+        var dist = target - from;
+        var start = performance.now();
+        var dur = Math.min(420, Math.max(160, Math.abs(dist) * 0.7));
+        function tick(now) {
+          var t = Math.min(1, (now - start) / dur);
+          var eased = 1 - Math.pow(1 - t, 3);
+          scroller.scrollTop = from + dist * eased;
+          if (t < 1 && !state.userScrolling) {
+            state.scrollAnim = requestAnimationFrame(tick);
+          } else {
+            state.scrollAnim = 0;
+          }
+        }
+        state.scrollAnim = requestAnimationFrame(tick);
+      }
+
+      function reanchorFromLine() {
+        var scroller = $("scroller");
+        var mid = scroller.getBoundingClientRect().top + scroller.getBoundingClientRect().height * 0.36;
+        var best = follower.cursor;
+        var bestDist = Infinity;
+        for (var i = 0; i < state.wordEls.length; i++) {
+          var r = state.wordEls[i].getBoundingClientRect();
+          var d = Math.abs(r.top + r.height / 2 - mid);
+          if (d < bestDist) { bestDist = d; best = i; }
+        }
+        follower.setCursor(best);
+        paintCursor();
+        state.userScrolling = false;
+      }
+
+      function onFollowResult(result, heard) {
+        if (heard) setHeard(heard);
+        paintCursor();
+        if (result && result.matched) scrollToCursor(true);
+      }
+
+      async function startCamera(facing) {
+        var next = facing || state.facing || "user";
+        var prev = state.stream;
+        var constraints = {
+          audio: false,
+          video: {
+            facingMode: { ideal: next },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          }
+        };
+        var stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (err) {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: { facingMode: next }
+          });
+        }
+        if (prev) prev.getTracks().forEach(function (t) { t.stop(); });
+        state.stream = stream;
+        state.facing = next;
+        var video = $("cam");
+        video.setAttribute("playsinline", "");
+        video.setAttribute("webkit-playsinline", "");
+        video.muted = true;
+        video.playsInline = true;
+        video.srcObject = stream;
+        video.classList.toggle("mirror", next === "user");
+        try { await video.play(); } catch (e) {}
+      }
+
+      async function ensureMicForRecording() {
+        if (!state.stream) return;
+        var live = state.stream.getAudioTracks().some(function (t) { return t.readyState === "live"; });
+        if (live) return;
+        var audio = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+          video: false
+        });
+        audio.getAudioTracks().forEach(function (t) { state.stream.addTrack(t); });
+      }
+
+      function startListening() {
+        var Ctor = SpeechCtor();
+        if (!Ctor) {
+          if (state.mode === "voice") applyMode("auto");
+          updateListenBadge();
+          return;
+        }
+        state.wantListen = true;
+        state.reconnectShown = false;
+        clearTimeout(state.restartTimer);
+        stopRecogOnly();
+        var rec = new Ctor();
+        rec.continuous = true;
+        rec.interimResults = true;
+        try { rec.maxAlternatives = 3; } catch (e) {}
+        rec.lang = (navigator.language || "en-US");
+        rec.onresult = function (event) {
+          state.errorStreak = 0;
+          state.reconnectShown = false;
+          state.listenStartedAt = Date.now();
+          updateListenBadge();
+          var interim = "";
+          var finals = "";
+          var alts = [];
+          for (var i = event.resultIndex; i < event.results.length; i++) {
+            var res = event.results[i];
+            var text = (res[0] && res[0].transcript) || "";
+            if (res.isFinal) {
+              finals += " " + text;
+              for (var a = 1; a < res.length; a++) {
+                if (res[a] && res[a].transcript) alts.push(res[a].transcript);
+              }
+            } else {
+              interim += " " + text;
+            }
+          }
+          finals = finals.trim();
+          interim = interim.trim();
+          if (finals) {
+            var r = follower.ingest(finals, true);
+            if (!r.matched) {
+              for (var k = 0; k < alts.length; k++) {
+                r = follower.ingest(alts[k], true);
+                if (r.matched) break;
+              }
+            }
+            onFollowResult(r, finals);
+          }
+          if (interim) onFollowResult(follower.ingest(interim, false), interim);
+        };
+        rec.onerror = function (event) {
+          var err = (event && event.error) || "";
+          if (err === "not-allowed" || err === "service-not-allowed") {
+            state.wantListen = false;
+            state.errorStreak = 99;
+            updateListenBadge();
+            return;
+          }
+          if (err === "no-speech" || err === "aborted" || err === "network" || err === "audio-capture") {
+            state.errorStreak += 1;
+            scheduleRestart(err === "network" ? 350 : 70);
+            return;
+          }
+          state.errorStreak += 1;
+          scheduleRestart(120);
+        };
+        rec.onend = function () {
+          if (!state.wantListen || !state.playing || state.mode !== "voice") return;
+          var lag = Date.now() - (state.listenStartedAt || 0);
+          if (lag > 900) state.reconnectShown = false;
+          else state.reconnectShown = true;
+          updateListenBadge();
+          scheduleRestart(60);
+        };
+        rec.onstart = function () {
+          state.reconnectShown = false;
+          state.listenStartedAt = Date.now();
+          updateListenBadge();
+        };
+        state.rec = rec;
+        try {
+          rec.start();
+          updateListenBadge();
+        } catch (err) {
+          scheduleRestart(180);
+        }
+      }
+
+      function scheduleRestart(ms) {
+        if (!state.wantListen || !state.playing || state.mode !== "voice") return;
+        clearTimeout(state.restartTimer);
+        if (state.errorStreak >= 8) updateListenBadge();
+        state.restartTimer = setTimeout(function () {
+          if (state.wantListen && state.playing && state.mode === "voice") startListening();
+        }, ms);
+      }
+
+      function stopRecogOnly() {
+        var rec = state.rec;
+        state.rec = null;
+        if (!rec) return;
+        rec.onresult = rec.onerror = rec.onend = rec.onstart = null;
+        try { rec.abort(); } catch (e) {
+          try { rec.stop(); } catch (e2) {}
+        }
+      }
+
+      function stopListening(keepWant) {
+        if (!keepWant) state.wantListen = false;
+        clearTimeout(state.restartTimer);
+        stopRecogOnly();
+        updateListenBadge();
+      }
+
+      function togglePlay() {
+        if (state.playing) pauseAll();
+        else playAll();
+      }
+
+      function playAll() {
+        state.playing = true;
+        $("playLabel").textContent = "Pause";
+        $("playIcon").innerHTML = '<rect x="7" y="5" width="3.5" height="14"/><rect x="13.5" y="5" width="3.5" height="14"/>';
+        $("playBtn").classList.add("active");
+        if (state.mode === "voice") startListening();
+        state.autoLast = performance.now();
+        requestAnimationFrame(autoTick);
+        requestWakeLock();
+        updateListenBadge();
+      }
+
+      function pauseAll() {
+        state.playing = false;
+        $("playLabel").textContent = "Play";
+        $("playIcon").innerHTML = '<path d="M8 5v14l11-7z"/>';
+        $("playBtn").classList.remove("active");
+        stopListening();
+        releaseWakeLock();
+        updateListenBadge();
+      }
+
+      function autoTick(now) {
+        if (!state.playing) return;
+        requestAnimationFrame(autoTick);
+        if (state.mode !== "auto" || state.userScrolling) {
+          state.autoLast = now;
+          return;
+        }
+        var wpm = Number($("speed").value) || 140;
+        var words = follower.words.length || 1;
+        // Approximate: 1 word ≈ font-size * 0.7 of scroll, but we advance cursor by time
+        var elapsed = (now - state.autoLast) / 1000;
+        state.autoLast = now;
+        var advance = (wpm / 60) * elapsed;
+        state._autoAccum = (state._autoAccum || 0) + advance;
+        if (state._autoAccum >= 1) {
+          var step = Math.floor(state._autoAccum);
+          state._autoAccum -= step;
+          var next = Math.min(follower.words.length - 1, follower.cursor + step);
+          if (next !== follower.cursor) {
+            follower.setCursor(next);
+            paintCursor();
+            scrollToCursor(true);
+          }
+        }
+      }
+
+      async function requestWakeLock() {
+        try {
+          if (navigator.wakeLock) {
+            state.wake = await navigator.wakeLock.request("screen");
+            state.wake.addEventListener("release", function () { state.wake = null; });
+          }
+        } catch (e) {}
+      }
+      function releaseWakeLock() {
+        if (state.wake) { try { state.wake.release(); } catch (e) {} }
+        state.wake = null;
+      }
+
+      async function flipCamera() {
+        if (state.recording) return;
+        var next = state.facing === "user" ? "environment" : "user";
+        $("flipBtn").disabled = true;
+        try { await startCamera(next); }
+        catch (err) { showError("Could not flip the camera."); }
+        $("flipBtn").disabled = false;
+      }
+
+      function recExtension(mime) {
+        if (mime && mime.indexOf("mp4") !== -1) return "mp4";
+        return "webm";
+      }
+
+      async function toggleRecord() {
+        if (state.recording) {
+          stopRecording();
+          return;
+        }
+        if (typeof MediaRecorder === "undefined") {
+          showError("Recording is not supported in this browser.");
+          return;
+        }
+        try { await ensureMicForRecording(); }
+        catch (err) { showError("Microphone access is needed to record audio."); return; }
+        var mime = pickRecorderMimeType();
+        state.mime = mime;
+        state.chunks = [];
+        try {
+          state.recorder = mime ? new MediaRecorder(state.stream, { mimeType: mime }) : new MediaRecorder(state.stream);
+        } catch (err) {
+          try { state.recorder = new MediaRecorder(state.stream); }
+          catch (err2) { showError("Could not start recording."); return; }
+        }
+        state.recorder.ondataavailable = function (e) {
+          if (e.data && e.data.size) state.chunks.push(e.data);
+        };
+        state.recorder.onstop = onRecordStop;
+        try { state.recorder.start(1000); }
+        catch (err) {
+          try { state.recorder.start(); } catch (err2) { showError("Could not start recording."); return; }
+        }
+        state.recording = true;
+        state.recStart = Date.now();
+        $("recBtn").classList.add("is-rec");
+        $("recTimer").hidden = false;
+        $("flipBtn").disabled = true;
+        tickRecTimer();
+        state.recTimerInt = setInterval(tickRecTimer, 250);
+        if (state.playing && state.mode === "voice") startListening();
+      }
+
+      function tickRecTimer() {
+        var s = Math.floor((Date.now() - state.recStart) / 1000);
+        var m = Math.floor(s / 60);
+        var r = s % 60;
+        $("recTimer").textContent = String(m).padStart(2, "0") + ":" + String(r).padStart(2, "0");
+      }
+
+      function stopRecording() {
+        if (!state.recorder) return;
+        try { if (state.recorder.state !== "inactive") state.recorder.stop(); } catch (e) { onRecordStop(); }
+      }
+
+      function onRecordStop() {
+        state.recording = false;
+        $("recBtn").classList.remove("is-rec");
+        $("recTimer").hidden = true;
+        $("flipBtn").disabled = false;
+        clearInterval(state.recTimerInt);
+        var type = (state.recorder && state.recorder.mimeType) || state.mime || "video/mp4";
+        state.recorder = null;
+        if (!state.chunks.length) return;
+        state.recBlob = new Blob(state.chunks, { type: type });
+        if (state.recUrl) URL.revokeObjectURL(state.recUrl);
+        state.recUrl = URL.createObjectURL(state.recBlob);
+        var video = $("reviewVideo");
+        video.src = state.recUrl;
+        $("review").hidden = false;
+        $("shareTake").hidden = !(navigator.share || navigator.canShare);
+      }
+
+      function closeReview() {
+        $("review").hidden = true;
+        $("reviewVideo").removeAttribute("src");
+        $("reviewVideo").load();
+        if (state.recUrl) URL.revokeObjectURL(state.recUrl);
+        state.recUrl = null;
+        state.recBlob = null;
+        state.chunks = [];
+      }
+
+      async function shareTake() {
+        if (!state.recBlob) return;
+        var ext = recExtension(state.recBlob.type);
+        var file = new File([state.recBlob], "teleprompter-take." + ext, { type: state.recBlob.type || "video/" + ext });
+        try {
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: "Teleprompter take" });
+            return;
+          }
+          if (navigator.share) { await navigator.share({ title: "Teleprompter take", url: state.recUrl }); return; }
+        } catch (err) {
+          if (err && err.name === "AbortError") return;
+        }
+        downloadTake();
+      }
+
+      function downloadTake() {
+        if (!state.recBlob || !state.recUrl) return;
+        var a = document.createElement("a");
+        a.href = state.recUrl;
+        a.download = "teleprompter-take." + recExtension(state.recBlob.type);
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+
+      function showError(msg) {
+        var box = $("errorBox");
+        box.hidden = !msg;
+        box.textContent = msg || "";
+      }
+
+      function bindPointer() {
+        var scroller = $("scroller");
+        scroller.addEventListener("pointerdown", function (e) {
+          state.pointer = { x: e.clientX, y: e.clientY, moved: false };
+        });
+        scroller.addEventListener("pointermove", function (e) {
+          if (!state.pointer) return;
+          if (Math.abs(e.clientY - state.pointer.y) > 8 || Math.abs(e.clientX - state.pointer.x) > 8) {
+            state.pointer.moved = true;
+            state.userScrolling = true;
+            cancelScroll();
+          }
+        });
+        function endPointer(e) {
+          if (!state.pointer) return;
+          var moved = state.pointer.moved;
+          state.pointer = null;
+          if (!moved) {
+            state.userScrolling = false;
+            if (e && e.target && e.target.closest("button, input, textarea, label, .seg, #sheet, #review")) return;
+            togglePlay();
+            return;
+          }
+          clearTimeout(state.scrollTimer);
+          state.scrollTimer = setTimeout(reanchorFromLine, 120);
+        }
+        scroller.addEventListener("pointerup", endPointer);
+        scroller.addEventListener("pointercancel", function () {
+          state.pointer = null;
+          clearTimeout(state.scrollTimer);
+          state.scrollTimer = setTimeout(reanchorFromLine, 120);
+        });
+        scroller.addEventListener("scroll", function () {
+          if (state.scrollAnim) return;
+          if (!state.userScrolling) return;
+          clearTimeout(state.scrollTimer);
+          state.scrollTimer = setTimeout(reanchorFromLine, 140);
+        }, { passive: true });
+      }
+
+      function bind() {
+        $("startBtn").addEventListener("click", async function () {
+          showError("");
+          if (!window.isSecureContext) {
+            showError("This page needs to be opened at an https address before the camera or voice-follow will work on an iPhone.");
+            return;
+          }
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            showError("This browser cannot open the camera.");
+            return;
+          }
+          $("startBtn").disabled = true;
+          try {
+            await startCamera("user");
+            $("gate").hidden = true;
+            $("stage").hidden = false;
+            scrollToCursor(false);
+            if (!SpeechCtor()) {
+              applyMode("auto");
+              $("modeVoice").disabled = true;
+              $("listenLabel").textContent = "Voice follow unavailable";
+            } else {
+              playAll();
+            }
+          } catch (err) {
+            $("startBtn").disabled = false;
+            showError("Camera access was blocked. Allow the camera and try again.");
+          }
+        });
+        $("playBtn").addEventListener("click", togglePlay);
+        $("flipBtn").addEventListener("click", flipCamera);
+        $("recBtn").addEventListener("click", toggleRecord);
+        $("scriptBtn").addEventListener("click", function () {
+          $("scriptInput").value = $("scriptInput").value || SAMPLE;
+          $("sheet").hidden = false;
+          setTimeout(function () { $("scriptInput").focus(); }, 50);
+        });
+        $("cancelScript").addEventListener("click", function () { $("sheet").hidden = true; });
+        $("resetScript").addEventListener("click", function () { $("scriptInput").value = SAMPLE; });
+        $("useScript").addEventListener("click", function () {
+          setScript($("scriptInput").value);
+          savePrefs();
+          $("sheet").hidden = true;
+          if (state.playing && state.mode === "voice") startListening();
+        });
+        $("modeVoice").addEventListener("click", function () {
+          if (!SpeechCtor()) return;
+          applyMode("voice");
+        });
+        $("modeAuto").addEventListener("click", function () { applyMode("auto"); });
+        $("speed").addEventListener("input", savePrefs);
+        $("fontSize").addEventListener("input", function () { applyFont(); savePrefs(); });
+        $("discardTake").addEventListener("click", closeReview);
+        $("downloadTake").addEventListener("click", downloadTake);
+        $("shareTake").addEventListener("click", shareTake);
+        bindPointer();
+        document.addEventListener("visibilitychange", function () {
+          if (document.hidden) {
+            if (state.wantListen) stopRecogOnly();
+            return;
+          }
+          if (state.playing && state.mode === "voice" && state.wantListen) startListening();
+          if (state.playing) requestWakeLock();
+        });
+        window.addEventListener("pagehide", function () { stopListening(); releaseWakeLock(); });
+        window.addEventListener("orientationchange", function () {
+          setTimeout(function () { scrollToCursor(false); }, 250);
+        });
+      }
+
+      if (!window.isSecureContext) {
+        $("gateNote").textContent = "This page is not on a secure https address, so iPhone Safari will not allow the camera or voice-follow. Host it at an https URL and open that link.";
+      }
+      loadPrefs();
+      bind();
+    })();
+  </script>
+</body>
+</html>
