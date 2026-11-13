@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-build="rail-compact-v3">
+<html lang="en" data-build="share-dismiss-v4">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -10,12 +10,12 @@
   <meta name="application-name" content="Teleprompter">
   <meta name="theme-color" content="#0b0b0b">
   <meta name="color-scheme" content="dark">
-  <meta name="teleprompter-build" content="rail-compact-v3">
+  <meta name="teleprompter-build" content="share-dismiss-v4">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <title>Teleprompter</title>
-  <!-- teleprompter-build: rail-compact-v3 -->
+  <!-- teleprompter-build: share-dismiss-v4 -->
   <style>
     :root {
       --bg: #0b0b0b;
@@ -90,7 +90,7 @@
     #gate p { margin: 0 0 14px; color: var(--muted); max-width: 28rem; line-height: 1.45; }
     #startBtn { align-self: flex-start; min-height: 52px; padding: 0 22px; background: var(--accent); color: #1a1206; font-weight: 600; font-size: 17px; }
     #gateNote { font-size: 13px; }
-    #gate[hidden], #stage[hidden], #sheet[hidden], #review[hidden], #settings[hidden], #railTab[hidden] { display: none !important; }
+    #gate[hidden], #stage[hidden], #sheet[hidden], #review[hidden], #settings[hidden], #railTab[hidden], #lastTakeBtn[hidden] { display: none !important; }
 
     #camWrap {
       position: absolute;
@@ -299,7 +299,45 @@
       font-size: 16px;
       line-height: 1.45;
     }
-    #review video { max-height: 40vh; background: #000; }
+    #review .panel {
+      max-height: 100%;
+      overflow: hidden;
+    }
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex: none;
+    }
+    .panel-head h2 { margin: 0; }
+    .icon-btn {
+      min-width: 44px;
+      min-height: 44px;
+      padding: 0;
+      border-radius: 50%;
+      background: #222;
+      font-size: 20px;
+      line-height: 1;
+    }
+    #review video { max-height: 40vh; min-height: 0; flex: 1 1 auto; background: #000; }
+    #review .review-actions { flex: none; flex-wrap: wrap; }
+    #review .review-actions button { flex: 1 1 calc(50% - 8px); min-width: 7rem; }
+    #lastTakeBtn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      min-height: 44px;
+      margin-top: 8px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    #lastTakeBtn svg { width: 18px; height: 18px; }
     .panel .row { margin-top: 0; }
     .panel .row button { flex: 1; background: #222; }
     .panel .row button.primary { background: var(--accent); color: #1a1206; font-weight: 600; }
@@ -398,11 +436,28 @@
       #stage.rail-collapsed #railTab { display: flex; align-items: center; justify-content: center; }
     }
 
+    @media (orientation: landscape) {
+      #review video { max-height: 34vh; }
+      #lastTakeBtn {
+        width: 100%;
+        min-height: 40px;
+        margin-top: 0;
+        flex-direction: column;
+        gap: 1px;
+        padding: 4px 2px;
+        font-size: 9px;
+      }
+    }
+    @media (orientation: landscape) and (max-height: 420px) {
+      #review video { max-height: 22vh; }
+      #review .review-actions button { min-height: 40px; font-size: 13px; }
+    }
     @media (orientation: landscape) and (max-height: 360px) {
       :root { --rail-inner: 100px; }
       .row.primary button, #railTools button { min-height: 40px; }
       #topbar { padding-top: calc(4px + var(--safe-t)); padding-bottom: 2px; }
       .badge { min-height: 28px; font-size: 11px; }
+      #review video { max-height: 18vh; }
     }
   </style>
 </head>
@@ -476,6 +531,10 @@
             Hide
           </button>
         </div>
+        <button type="button" id="lastTakeBtn" hidden aria-label="Last take">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 5h14v14H5z"/><path fill="#0b0b0b" d="M10 8.5v7l6-3.5z"/></svg>
+          Last take
+        </button>
       </div>
     </div>
     <button type="button" id="railTab" hidden aria-label="Show controls">
@@ -505,12 +564,16 @@
     </div>
 
     <div id="review" hidden>
-      <div class="panel">
-        <h2>Take</h2>
+      <div class="panel" id="reviewPanel">
+        <div class="panel-head">
+          <h2>Take</h2>
+          <button type="button" id="closeReviewX" class="icon-btn" aria-label="Close">×</button>
+        </div>
         <video id="reviewVideo" controls playsinline></video>
-        <div class="row">
-          <button type="button" id="discardTake">Discard</button>
+        <div class="row review-actions">
+          <button type="button" id="doneReview">Done</button>
           <button type="button" id="downloadTake">Download</button>
+          <button type="button" id="discardTake">Discard</button>
           <button type="button" id="shareTake" class="primary">Share</button>
         </div>
       </div>
@@ -581,6 +644,7 @@
         recTimerInt: null,
         recBlob: null,
         recUrl: null,
+        sharing: false,
         mime: "",
         wake: null,
         wordEls: [],
@@ -1257,6 +1321,7 @@
         catch (err) {
           try { state.recorder.start(); } catch (err2) { showError("Could not start recording."); return; }
         }
+        hideReview();
         state.recording = true;
         state.recStart = Date.now();
         $("recBtn").classList.add("is-rec");
@@ -1279,6 +1344,38 @@
         try { if (state.recorder.state !== "inactive") state.recorder.stop(); } catch (e) { onRecordStop(); }
       }
 
+      function updateLastTakeBtn() {
+        $("lastTakeBtn").hidden = !state.recBlob;
+      }
+
+      function hideReview() {
+        var video = $("reviewVideo");
+        try { if (video) video.pause(); } catch (e) {}
+        $("review").hidden = true;
+        updateLastTakeBtn();
+      }
+
+      function openReview() {
+        if (!state.recBlob || !state.recUrl) return;
+        var video = $("reviewVideo");
+        if (video.getAttribute("src") !== state.recUrl) video.src = state.recUrl;
+        $("shareTake").hidden = !(navigator.share || navigator.canShare);
+        $("review").hidden = false;
+        updateLastTakeBtn();
+      }
+
+      function discardTake() {
+        hideReview();
+        var video = $("reviewVideo");
+        video.removeAttribute("src");
+        try { video.load(); } catch (e) {}
+        if (state.recUrl) URL.revokeObjectURL(state.recUrl);
+        state.recUrl = null;
+        state.recBlob = null;
+        state.chunks = [];
+        updateLastTakeBtn();
+      }
+
       function onRecordStop() {
         state.recording = false;
         $("recBtn").classList.remove("is-rec");
@@ -1288,39 +1385,41 @@
         var type = (state.recorder && state.recorder.mimeType) || state.mime || "video/mp4";
         state.recorder = null;
         if (!state.chunks.length) return;
+        var prevUrl = state.recUrl;
         state.recBlob = new Blob(state.chunks, { type: type });
-        if (state.recUrl) URL.revokeObjectURL(state.recUrl);
         state.recUrl = URL.createObjectURL(state.recBlob);
+        if (prevUrl) URL.revokeObjectURL(prevUrl);
         var video = $("reviewVideo");
         video.src = state.recUrl;
-        $("review").hidden = false;
         $("shareTake").hidden = !(navigator.share || navigator.canShare);
-      }
-
-      function closeReview() {
-        $("review").hidden = true;
-        $("reviewVideo").removeAttribute("src");
-        $("reviewVideo").load();
-        if (state.recUrl) URL.revokeObjectURL(state.recUrl);
-        state.recUrl = null;
-        state.recBlob = null;
-        state.chunks = [];
+        $("review").hidden = false;
+        updateLastTakeBtn();
       }
 
       async function shareTake() {
-        if (!state.recBlob) return;
+        if (!state.recBlob || state.sharing) return;
         var ext = recExtension(state.recBlob.type);
         var file = new File([state.recBlob], "teleprompter-take." + ext, { type: state.recBlob.type || "video/" + ext });
+        var shared = false;
+        state.sharing = true;
+        $("shareTake").disabled = true;
         try {
           if (navigator.canShare && navigator.canShare({ files: [file] })) {
             await navigator.share({ files: [file], title: "Teleprompter take" });
-            return;
+            shared = true;
+          } else if (navigator.share) {
+            await navigator.share({ title: "Teleprompter take", url: state.recUrl });
+            shared = true;
+          } else {
+            downloadTake();
           }
-          if (navigator.share) { await navigator.share({ title: "Teleprompter take", url: state.recUrl }); return; }
+          if (shared) hideReview();
         } catch (err) {
           if (err && err.name === "AbortError") return;
+        } finally {
+          state.sharing = false;
+          $("shareTake").disabled = false;
         }
-        downloadTake();
       }
 
       function downloadTake() {
@@ -1455,7 +1554,13 @@
           applyFont();
           savePrefs();
         });
-        $("discardTake").addEventListener("click", closeReview);
+        $("discardTake").addEventListener("click", discardTake);
+        $("doneReview").addEventListener("click", hideReview);
+        $("closeReviewX").addEventListener("click", hideReview);
+        $("lastTakeBtn").addEventListener("click", openReview);
+        $("review").addEventListener("click", function (e) {
+          if (e.target === $("review")) hideReview();
+        });
         $("downloadTake").addEventListener("click", downloadTake);
         $("shareTake").addEventListener("click", shareTake);
         bindPointer();
